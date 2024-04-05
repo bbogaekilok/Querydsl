@@ -1,12 +1,16 @@
 package com.study.querydsl;
 
 
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.querydsl.core.QueryResults;
+import com.querydsl.core.Tuple;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import com.study.querydsl.entity.Member;
 import com.study.querydsl.entity.QMember;
+import com.study.querydsl.entity.QTeam;
 import com.study.querydsl.entity.Team;
 import jakarta.persistence.EntityManager;
+import org.assertj.core.api.Assert;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 import static com.study.querydsl.entity.QMember.member;
+import static com.study.querydsl.entity.QTeam.team;
 
 @SpringBootTest
 @Transactional
@@ -156,6 +161,7 @@ public class QuerydslBasicTest {
         // 단건 조회
         Member result2 = queryFactory
                 .selectFrom(member)
+                .limit(1)
                 .fetchOne();
 
         // 처음 한 건 조회 (.limit(1).fetchOne() 과 같음)
@@ -210,4 +216,78 @@ public class QuerydslBasicTest {
         Assertions.assertThat(member6.getUsername()).isEqualTo("member6");
         Assertions.assertThat(memberNull.getUsername()).isNull();
     }
+
+    @Test
+    public void paging1(){
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .orderBy(member.username.desc())
+                .offset(1)  // 0부터 시작(zero index)
+                .limit(2)   // 최대 2건 조회
+                .fetch(); // 리스트로 조회
+
+        Assertions.assertThat(result.size()).isEqualTo(2);
+    }
+
+    @Test
+    public void paging2(){
+        QueryResults<Member> queryResults = queryFactory
+                .selectFrom(member)
+                .orderBy(member.username.desc())
+                .offset(1)
+                .limit(2)
+                .fetchResults();
+
+        Assertions.assertThat(queryResults.getTotal()).isEqualTo(4);
+        Assertions.assertThat(queryResults.getLimit()).isEqualTo(2);
+        Assertions.assertThat(queryResults.getOffset()).isEqualTo(1);
+        Assertions.assertThat(queryResults.getResults().size()).isEqualTo(2);
+
+    }
+
+    @Test
+    public void aggregation() throws Exception {
+        // 집합 함수
+        // querydsl 에서 제공하는 Tuple
+
+        List<Tuple> result = queryFactory
+                .select(member.count(),  // 총 수
+                        member.age.sum(),       // 합계
+                        member.age.avg(),       // 평균
+                        member.age.max(),       // 최대값
+                        member.age.min())       // 최저값
+                .from(member)
+                .fetch();
+
+        Tuple tuple = result.get(0);
+
+        Assertions.assertThat(tuple.get(member.count())).isEqualTo(4);
+        Assertions.assertThat(tuple.get(member.age.sum())).isEqualTo(100);
+        Assertions.assertThat(tuple.get(member.age.avg())).isEqualTo(25);
+        Assertions.assertThat(tuple.get(member.age.max())).isEqualTo(40);
+        Assertions.assertThat(tuple.get(member.age.min())).isEqualTo(10);
+
+    }
+
+    @Test
+    public void group() throws Exception {
+        List<Tuple> result = queryFactory
+                .select(team.name, member.age.avg())   // static import
+                .from(member)
+                .join(member.team, team)        // member tabel, team table join
+                .groupBy(team.name)
+                //.having()                     // 그룹화 조건문
+                .fetch();
+
+        Tuple teamA = result.get(0);
+        Tuple teamB = result.get(1);
+
+        Assertions.assertThat(teamA.get(team.name)).isEqualTo("teamA");
+        Assertions.assertThat(teamA.get(member.age.avg())).isEqualTo(15);
+
+        Assertions.assertThat(teamB.get(team.name)).isEqualTo("teamB");
+        Assertions.assertThat(teamB.get(member.age.avg())).isEqualTo(15);
+    }
+
+
 }
