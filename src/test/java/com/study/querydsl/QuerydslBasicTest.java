@@ -10,6 +10,8 @@ import com.study.querydsl.entity.QMember;
 import com.study.querydsl.entity.QTeam;
 import com.study.querydsl.entity.Team;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.PersistenceUnit;
 import org.assertj.core.api.Assert;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -236,7 +238,7 @@ public class QuerydslBasicTest {
                 .orderBy(member.username.desc())
                 .offset(1)
                 .limit(2)
-                .fetchResults();
+                .fetchResults();    // 총 건수 + 리스트
 
         Assertions.assertThat(queryResults.getTotal()).isEqualTo(4);
         Assertions.assertThat(queryResults.getLimit()).isEqualTo(2);
@@ -287,6 +289,115 @@ public class QuerydslBasicTest {
 
         Assertions.assertThat(teamB.get(team.name)).isEqualTo("teamB");
         Assertions.assertThat(teamB.get(member.age.avg())).isEqualTo(15);
+    }
+
+
+    /**
+     * join(조인 대상, 별칭으로 사용할 Q타입)
+     */
+    @Test
+    public void join() {
+
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .join(member.team, team)
+                //.innerJoin(member.team, team)
+                //.leftJoin(member.team, team)
+                //.rightJoin(member.team, team)
+                .where(team.name.eq("teamA"))
+                .fetch();
+
+        Assertions.assertThat(result)
+                .extracting("useername")
+                .containsExactly("member1", "member2");
+    }
+
+    /**
+     * 세타 조인 (연관 관계 없이 필드로 조인)
+     * 아우터 조인 불가하지만 조인 on 절을 사용하여 외부 조인 가능
+     */
+    @Test
+    public void theta_join() throws Exception{
+        em.persist(new Member("teamA"));
+        em.persist(new Member("teamB"));
+
+        List<Member> result = queryFactory
+                .select(member)
+                .from(member, team)
+                .where(member.username.eq(team.name))
+                .fetch();
+
+        Assertions.assertThat(result)
+                .extracting("username")
+                .containsExactly("teamA", "teamB");
+    }
+
+
+    /**
+     * on 절 조인
+     * 회원과 팀을 조인하면서, 팀 이름이 teamA인 팀만 조인, 회원은 모두 조회
+     * JPQL :  select m, t from Member m left join m.join m.team, t on t.name = 'teamA'
+     */
+    @Test
+    public void join_on_filtering() {
+        List<Tuple> result = queryFactory
+                .select(member, team)
+                .from(member)
+                .leftJoin(member.team, team).on(team.name.eq("teamA"))        // 아우터 조인 시 on절로
+                //.join(member.team, team).where(team.name.eq("teamA"))     // 이너 조인 시 where절로
+                .fetch();
+
+        for (Tuple tuple : result){
+            System.out.println("tuple = "+tuple);
+        }
+    }
+
+    /**
+     * 연관관계 없는 엔티티 외부 조인
+     */
+    @Test
+    public void join_on_no_relation() {
+        em.persist(new Member("teamA"));
+        em.persist(new Member("teamB"));
+        em.persist(new Member("teamC"));
+
+        List<Tuple> result = queryFactory
+                .select(member, team)
+                .from(member)
+                .leftJoin(team)
+                .on(member.username.eq(team.name))
+                .fetch();
+
+        Assertions.assertThat(result)
+                .extracting("username")
+                .containsExactly("teamA", "teamB");
+
+    }
+
+    /**
+     * 페치 조인
+     * SQL조인을 활용해서 연관된 엔티티를 한번에 조회하는 기능으로 성능 최적화에 사용하는 방법
+     */
+    @PersistenceUnit
+    EntityManagerFactory emf;
+
+    @Test
+    public void fetchJoinNo(){
+
+        // 영속성 컨텍스트를 먼저 초기화 해줘야함 결과를 제대로 볼 수 없기 때문
+        em.flush();
+        em.clear();
+
+        Member findMember = queryFactory
+                .selectFrom(member)
+                .join(member.team, team)
+                .fetchJoin()
+                .where(member.username.eq("member1"))
+                .fetchOne();
+
+        // 페치 조인 적용 여부를 알 수 있다.
+        boolean loaded = emf.getPersistenceUnitUtil().isLoaded(findMember.getTeam());
+        Assertions.assertThat(loaded).as("페치 조인 미적용").isFalse();
     }
 
 
