@@ -4,6 +4,10 @@ package com.study.querydsl;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.Expression;
+import com.querydsl.core.types.dsl.CaseBuilder;
+import com.querydsl.core.types.dsl.Expressions;
+import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import com.study.querydsl.entity.Member;
 import com.study.querydsl.entity.QMember;
@@ -399,6 +403,104 @@ public class QuerydslBasicTest {
         boolean loaded = emf.getPersistenceUnitUtil().isLoaded(findMember.getTeam());
         Assertions.assertThat(loaded).as("페치 조인 미적용").isFalse();
     }
+
+
+    /**
+     * JPAExpressions 사용
+     */
+    @Test
+    public void subQuery() throws Exception {
+
+        QMember memberSub = new QMember("memberSub");
+
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .where(member.age.eq(
+                        JPAExpressions
+                                .select(memberSub.age.max())
+                                .from(memberSub)
+                ))
+                .fetch();
+
+        Assertions.assertThat(result).extracting("age")
+                .containsExactly(40);
+    }
+
+    @Test
+    public void selectSubQuery(){
+
+        QMember memberSub = new QMember("memberSub");
+
+        List<Tuple> result = queryFactory
+                .select(member.username,
+                        JPAExpressions
+                                .select(memberSub.age.avg())
+                                .from(memberSub))
+                .from(member)
+                .fetch();
+
+        for (Tuple tuple : result){
+            System.out.println("tuple=" +tuple);
+        }
+    }
+
+
+    /**
+     * Case 문
+     * .when() .then()
+     * select, where문에서 사용 가능
+     */
+    @Test
+    public void basicCase(){
+        List<String> result = queryFactory
+                .select(member.age
+                        .when(10).then("열살")
+                        .when(20).then("스무살")
+                        .otherwise("기타"))
+                .from(member)
+                .fetch();
+
+        for (String s : result) {
+            System.out.println("s = "+s);
+        }
+
+    }
+
+    /**
+     * 상수
+     * Expressions.constant()
+     */
+    @Test
+    public void constant() {
+        List<Tuple> result = queryFactory
+                .select(member.username, Expressions.constant("A"))
+                .from(member)
+                .fetch();
+
+        for (Tuple tuple : result){
+            System.out.println("tuple ="+tuple);
+        }
+    }
+
+    /**
+     * 문자 더하기
+     * concat
+     * 문자 타입으로 변환(특히 enum 사용 시 유용)  .stringValue()
+     */
+    @Test
+    public void concat(){
+        List<String> result = queryFactory
+                .select(member.username.concat("_").concat(member.age.stringValue()))
+                .from(member)
+                .where(member.username.eq("member1"))
+                .fetch();
+
+        for (String s : result){
+            System.out.println("s =" +s);
+        }
+
+    }
+
 
 
 }
